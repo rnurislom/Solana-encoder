@@ -5,7 +5,7 @@ A real-time Solana wallet monitoring tool built on [Yellowstone gRPC](https://gi
 ## Prerequisites
 
 - Go 1.24+
-- A Yellowstone gRPC endpoint (e.g. from Triton, Helius, or self-hosted)
+- A Yellowstone gRPC endpoint (e.g. from Chainstack, Triton, Helius, or self-hosted)
 
 ## Installation
 
