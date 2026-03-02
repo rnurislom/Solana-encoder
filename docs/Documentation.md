@@ -72,6 +72,7 @@ All configuration is provided via CLI flags. No environment variables or config 
 | `--token`    | string | ""      | x-token authentication header                    |
 | `--username` | string | ""      | Basic auth username                              |
 | `--password` | string | ""      | Basic auth password                              |
+| `--output`   | string | ""      | Write updates to file instead of terminal       |
 | `--insecure` | bool   | false   | Skip TLS (auto-detected for `http://` endpoints) |
 
 ## Dependencies

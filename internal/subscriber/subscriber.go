@@ -20,12 +20,16 @@ import (
 )
 
 type Subscriber struct {
-	conn *grpc.ClientConn
-	cfg  *config.Config
+	conn   *grpc.ClientConn
+	cfg    *config.Config
+	output io.Writer
 }
 
-func New(conn *grpc.ClientConn, cfg *config.Config) *Subscriber {
-	return &Subscriber{conn: conn, cfg: cfg}
+func New(conn *grpc.ClientConn, cfg *config.Config, output io.Writer) *Subscriber {
+	if output == nil {
+		output = io.Discard
+	}
+	return &Subscriber{conn: conn, cfg: cfg, output: output}
 }
 
 func (s *Subscriber) Run(ctx context.Context) error {
@@ -92,9 +96,9 @@ func (s *Subscriber) buildRequest() *pb.SubscribeRequest {
 func (s *Subscriber) handleUpdate(update *pb.SubscribeUpdate) {
 	switch u := update.UpdateOneof.(type) {
 	case *pb.SubscribeUpdate_Account:
-		printAccountUpdate(u.Account, update.Filters)
+		s.printAccountUpdate(u.Account, update.Filters)
 	case *pb.SubscribeUpdate_Transaction:
-		printTransactionUpdate(u.Transaction, update.Filters)
+		s.printTransactionUpdate(u.Transaction, update.Filters)
 	case *pb.SubscribeUpdate_Ping:
 		// heartbeat — silent
 	case *pb.SubscribeUpdate_Pong:
@@ -102,7 +106,7 @@ func (s *Subscriber) handleUpdate(update *pb.SubscribeUpdate) {
 	}
 }
 
-func printAccountUpdate(acct *pb.SubscribeUpdateAccount, filters []string) {
+func (s *Subscriber) printAccountUpdate(acct *pb.SubscribeUpdateAccount, filters []string) {
 	if acct == nil || acct.Account == nil {
 		return
 	}
@@ -112,29 +116,31 @@ func printAccountUpdate(acct *pb.SubscribeUpdateAccount, filters []string) {
 	owner := base58.Encode(info.Owner)
 	solBalance := float64(info.Lamports) / 1e9
 
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("  ACCOUNT UPDATE")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("  Pubkey:        %s\n", pubkey)
-	fmt.Printf("  Owner:         %s\n", owner)
-	fmt.Printf("  Balance:       %.9f SOL (%d lamports)\n", solBalance, info.Lamports)
-	fmt.Printf("  Slot:          %d\n", acct.Slot)
-	fmt.Printf("  Executable:    %v\n", info.Executable)
-	fmt.Printf("  Data size:     %d bytes\n", len(info.Data))
-	fmt.Printf("  Write version: %d\n", info.WriteVersion)
+	w := s.output
+	fmt.Fprintln(w, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(w, "  ACCOUNT UPDATE")
+	fmt.Fprintln(w, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintf(w, "  Pubkey:        %s\n", pubkey)
+	fmt.Fprintf(w, "  Owner:         %s\n", owner)
+	fmt.Fprintf(w, "  Balance:       %.9f SOL (%d lamports)\n", solBalance, info.Lamports)
+	fmt.Fprintf(w, "  Slot:          %d\n", acct.Slot)
+	fmt.Fprintf(w, "  Executable:    %v\n", info.Executable)
+	fmt.Fprintf(w, "  Data size:     %d bytes\n", len(info.Data))
+	fmt.Fprintf(w, "  Write version: %d\n", info.WriteVersion)
 	if info.TxnSignature != nil {
-		fmt.Printf("  Txn signature: %s\n", base58.Encode(info.TxnSignature))
+		fmt.Fprintf(w, "  Txn signature: %s\n", base58.Encode(info.TxnSignature))
 	}
-	fmt.Printf("  Filters:       %v\n", filters)
-	fmt.Printf("  Timestamp:     %s\n", time.Now().Format(time.RFC3339Nano))
-	fmt.Println()
+	fmt.Fprintf(w, "  Filters:       %v\n", filters)
+	fmt.Fprintf(w, "  Timestamp:     %s\n", time.Now().Format(time.RFC3339Nano))
+	fmt.Fprintln(w)
 }
 
-func printTransactionUpdate(tx *pb.SubscribeUpdateTransaction, filters []string) {
+func (s *Subscriber) printTransactionUpdate(tx *pb.SubscribeUpdateTransaction, filters []string) {
 	if tx == nil || tx.Transaction == nil {
 		return
 	}
 
+	w := s.output
 	info := tx.Transaction
 	signature := base58.Encode(info.Signature)
 
@@ -145,58 +151,58 @@ func printTransactionUpdate(tx *pb.SubscribeUpdateTransaction, filters []string)
 
 	accounts := decoder.ResolveAccounts(msg, info.Meta)
 
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("  TRANSACTION")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("  Signature:     %s\n", signature)
-	fmt.Printf("  Slot:          %d\n", tx.Slot)
+	fmt.Fprintln(w, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(w, "  TRANSACTION")
+	fmt.Fprintln(w, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintf(w, "  Signature:     %s\n", signature)
+	fmt.Fprintf(w, "  Slot:          %d\n", tx.Slot)
 
 	if info.Meta != nil {
-		fmt.Printf("  Fee:           %d lamports (%.9f SOL)\n", info.Meta.Fee, float64(info.Meta.Fee)/1e9)
+		fmt.Fprintf(w, "  Fee:           %d lamports (%.9f SOL)\n", info.Meta.Fee, float64(info.Meta.Fee)/1e9)
 		if info.Meta.Err != nil {
-			fmt.Printf("  Status:        FAILED\n")
+			fmt.Fprintf(w, "  Status:        FAILED\n")
 		} else {
-			fmt.Printf("  Status:        SUCCESS\n")
+			fmt.Fprintf(w, "  Status:        SUCCESS\n")
 		}
 		if cu := info.Meta.ComputeUnitsConsumed; cu != nil {
-			fmt.Printf("  Compute units: %d\n", *cu)
+			fmt.Fprintf(w, "  Compute units: %d\n", *cu)
 		}
 	}
 
-	printAccountTable(accounts)
-	printInstructionTree(msg, info.Meta, accounts)
-	printSOLChanges(info.Meta, accounts)
-	printTokenChanges(info.Meta, accounts)
-	printWalletSummary(info.Meta, accounts)
-	printLogs(info.Meta)
+	s.printAccountTable(accounts)
+	s.printInstructionTree(msg, info.Meta, accounts)
+	s.printSOLChanges(info.Meta, accounts)
+	s.printTokenChanges(info.Meta, accounts)
+	s.printWalletSummary(info.Meta, accounts)
+	s.printLogs(info.Meta)
 
-	fmt.Printf("  Filters:       %v\n", filters)
-	fmt.Printf("  Timestamp:     %s\n", time.Now().Format(time.RFC3339Nano))
-	fmt.Println()
+	fmt.Fprintf(w, "  Filters:       %v\n", filters)
+	fmt.Fprintf(w, "  Timestamp:     %s\n", time.Now().Format(time.RFC3339Nano))
+	fmt.Fprintln(w)
 }
 
 // --- Account table ---
 
-func printAccountTable(accounts []decoder.AccountMeta) {
+func (s *Subscriber) printAccountTable(accounts []decoder.AccountMeta) {
 	if len(accounts) == 0 {
 		return
 	}
-
-	fmt.Println()
-	fmt.Println("  ┌─ Accounts ────────────────────────────────────────")
+	w := s.output
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  ┌─ Accounts ────────────────────────────────────────")
 	for _, a := range accounts {
-		fmt.Printf("  │ [%2d] %s  %s\n", a.Index, a.Address, a.Role)
+		fmt.Fprintf(w, "  │ [%2d] %s  %s\n", a.Index, a.Address, a.Role)
 	}
-	fmt.Println("  └────────────────────────────────────────────────────")
+	fmt.Fprintln(w, "  └────────────────────────────────────────────────────")
 }
 
 // --- Instruction tree ---
 
-func printInstructionTree(msg *pb.Message, meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
+func (s *Subscriber) printInstructionTree(msg *pb.Message, meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
 	if msg == nil {
 		return
 	}
-
+	w := s.output
 	innerMap := make(map[uint32][]*pb.InnerInstruction)
 	if meta != nil && !meta.InnerInstructionsNone {
 		for _, ii := range meta.InnerInstructions {
@@ -204,24 +210,24 @@ func printInstructionTree(msg *pb.Message, meta *pb.TransactionStatusMeta, accou
 		}
 	}
 
-	fmt.Println()
+	fmt.Fprintln(w)
 	for i, ix := range msg.Instructions {
 		progAddr := resolveAddress(accounts, int(ix.ProgramIdIndex))
 		progLabel := formatProgram(progAddr)
 
-		fmt.Printf("  ┌─ Instruction #%d: %s ─\n", i, progLabel)
+		fmt.Fprintf(w, "  ┌─ Instruction #%d: %s ─\n", i, progLabel)
 
 		for _, accIdx := range ix.Accounts {
 			idx := int(accIdx)
 			if idx < len(accounts) {
 				a := accounts[idx]
-				fmt.Printf("  │   [%2d] %s  %s\n", a.Index, a.Address, a.Role)
+				fmt.Fprintf(w, "  │   [%2d] %s  %s\n", a.Index, a.Address, a.Role)
 			}
 		}
 
 		if inners, ok := innerMap[uint32(i)]; ok && len(inners) > 0 {
-			fmt.Println("  │")
-			fmt.Println("  │   Inner (CPI) calls:")
+			fmt.Fprintln(w, "  │")
+			fmt.Fprintln(w, "  │   Inner (CPI) calls:")
 			for j, inner := range inners {
 				innerProgAddr := resolveAddress(accounts, int(inner.ProgramIdIndex))
 				innerProgLabel := formatProgram(innerProgAddr)
@@ -236,7 +242,7 @@ func printInstructionTree(msg *pb.Message, meta *pb.TransactionStatusMeta, accou
 					stackStr = fmt.Sprintf(" [depth=%d]", *inner.StackHeight)
 				}
 
-				fmt.Printf("  │   %s─ CPI #%d: %s%s\n", prefix, j, innerProgLabel, stackStr)
+				fmt.Fprintf(w, "  │   %s─ CPI #%d: %s%s\n", prefix, j, innerProgLabel, stackStr)
 
 				var acctParts []string
 				for _, accIdx := range inner.Accounts {
@@ -250,18 +256,18 @@ func printInstructionTree(msg *pb.Message, meta *pb.TransactionStatusMeta, accou
 					if j == len(inners)-1 {
 						indent = " "
 					}
-					fmt.Printf("  │   %s  Accounts: %s\n", indent, strings.Join(acctParts, " "))
+					fmt.Fprintf(w, "  │   %s  Accounts: %s\n", indent, strings.Join(acctParts, " "))
 				}
 			}
 		}
 
-		fmt.Println("  └────────────────────────────────────────────────────")
+		fmt.Fprintln(w, "  └────────────────────────────────────────────────────")
 	}
 }
 
 // --- SOL balance changes ---
 
-func printSOLChanges(meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
+func (s *Subscriber) printSOLChanges(meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
 	if meta == nil || len(meta.PreBalances) == 0 || len(meta.PostBalances) == 0 {
 		return
 	}
@@ -277,12 +283,13 @@ func printSOLChanges(meta *pb.TransactionStatusMeta, accounts []decoder.AccountM
 		return
 	}
 
+	w := s.output
 	fee := int64(meta.Fee)
 
-	fmt.Println()
-	fmt.Println("  ┌─ SOL Balance Changes ─────────────────────────────")
-	fmt.Printf("  │ Transaction fee: %d lamports (%.9f SOL)\n", fee, float64(fee)/1e9)
-	fmt.Println("  │")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  ┌─ SOL Balance Changes ─────────────────────────────")
+	fmt.Fprintf(w, "  │ Transaction fee: %d lamports (%.9f SOL)\n", fee, float64(fee)/1e9)
+	fmt.Fprintln(w, "  │")
 	for i := 0; i < len(meta.PreBalances) && i < len(meta.PostBalances); i++ {
 		pre := meta.PreBalances[i]
 		post := meta.PostBalances[i]
@@ -303,16 +310,16 @@ func printSOLChanges(meta *pb.TransactionStatusMeta, accounts []decoder.AccountM
 		}
 
 		if isFeePayer {
-			fmt.Printf("  │ %s: %s SOL (total) = %s SOL (transfer) + %s SOL (fee)\n",
+			fmt.Fprintf(w, "  │ %s: %s SOL (total) = %s SOL (transfer) + %s SOL (fee)\n",
 				addr,
 				formatSOL(diff),
 				formatSOL(diffExFee),
 				formatSOL(-fee))
 		} else {
-			fmt.Printf("  │ %s: %s SOL\n", addr, formatSOL(diff))
+			fmt.Fprintf(w, "  │ %s: %s SOL\n", addr, formatSOL(diff))
 		}
 	}
-	fmt.Println("  └────────────────────────────────────────────────────")
+	fmt.Fprintln(w, "  └────────────────────────────────────────────────────")
 }
 
 // --- Token balance changes ---
@@ -328,11 +335,11 @@ type tokenChange struct {
 	decimals     uint32
 }
 
-func printTokenChanges(meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
+func (s *Subscriber) printTokenChanges(meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
 	if meta == nil {
 		return
 	}
-
+	w := s.output
 	changes := computeTokenChanges(meta)
 	if len(changes) == 0 {
 		return
@@ -347,21 +354,21 @@ func printTokenChanges(meta *pb.TransactionStatusMeta, accounts []decoder.Accoun
 		byMint[c.mint] = append(byMint[c.mint], c)
 	}
 
-	fmt.Println()
-	fmt.Println("  ┌─ Token Balance Changes ────────────────────────────")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  ┌─ Token Balance Changes ────────────────────────────")
 	for _, mint := range mintOrder {
 		mintChanges := byMint[mint]
-		fmt.Printf("  │ Mint: %s\n", mint)
+		fmt.Fprintf(w, "  │ Mint: %s\n", mint)
 		for _, c := range mintChanges {
 			preF, _ := strconv.ParseFloat(c.preAmount, 64)
 			postF, _ := strconv.ParseFloat(c.postAmount, 64)
 			diffVal := postF - preF
 			ownerLabel := shortAddr(c.owner)
-			fmt.Printf("  │   Owner %s: %s -> %s (%s)\n",
+			fmt.Fprintf(w, "  │   Owner %s: %s -> %s (%s)\n",
 				ownerLabel, c.preAmount, c.postAmount, formatSignedFloat(diffVal))
 		}
 	}
-	fmt.Println("  └────────────────────────────────────────────────────")
+	fmt.Fprintln(w, "  └────────────────────────────────────────────────────")
 }
 
 func computeTokenChanges(meta *pb.TransactionStatusMeta) []tokenChange {
@@ -440,15 +447,15 @@ func computeTokenChanges(meta *pb.TransactionStatusMeta) []tokenChange {
 
 // --- Wallet-centric summary (net SOL + token changes per program) ---
 
-func printWalletSummary(meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
+func (s *Subscriber) printWalletSummary(meta *pb.TransactionStatusMeta, accounts []decoder.AccountMeta) {
 	if meta == nil {
 		return
 	}
-
+	w := s.output
 	fee := int64(meta.Fee)
 
-	fmt.Println()
-	fmt.Println("  ┌─ Net Changes Summary ─────────────────────────────")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  ┌─ Net Changes Summary ─────────────────────────────")
 
 	for i := 0; i < len(meta.PreBalances) && i < len(meta.PostBalances); i++ {
 		if i >= len(accounts) || !accounts[i].Role.IsSigner() {
@@ -466,7 +473,7 @@ func printWalletSummary(meta *pb.TransactionStatusMeta, accounts []decoder.Accou
 		}
 
 		addr := shortAddr(accounts[i].Address)
-		fmt.Printf("  │ %s SOL: %s (fee: %s)\n", addr, formatSOL(diffExFee), formatSOL(-fee))
+		fmt.Fprintf(w, "  │ %s SOL: %s (fee: %s)\n", addr, formatSOL(diffExFee), formatSOL(-fee))
 	}
 
 	// Net tokens owned by signers
@@ -499,25 +506,25 @@ func printWalletSummary(meta *pb.TransactionStatusMeta, accounts []decoder.Accou
 		if name != "" {
 			mintLabel = name
 		}
-		fmt.Printf("  │ %s: %s — %s\n", mintLabel, formatSignedFloat(diffAmt), action)
+		fmt.Fprintf(w, "  │ %s: %s — %s\n", mintLabel, formatSignedFloat(diffAmt), action)
 	}
 
-	fmt.Println("  └────────────────────────────────────────────────────")
+	fmt.Fprintln(w, "  └────────────────────────────────────────────────────")
 }
 
 // --- Log messages ---
 
-func printLogs(meta *pb.TransactionStatusMeta) {
+func (s *Subscriber) printLogs(meta *pb.TransactionStatusMeta) {
 	if meta == nil || meta.LogMessagesNone || len(meta.LogMessages) == 0 {
 		return
 	}
-
-	fmt.Println()
-	fmt.Println("  ┌─ Program Logs ─────────────────────────────────────")
+	w := s.output
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  ┌─ Program Logs ─────────────────────────────────────")
 	for _, msg := range meta.LogMessages {
-		fmt.Printf("  │ %s\n", msg)
+		fmt.Fprintf(w, "  │ %s\n", msg)
 	}
-	fmt.Println("  └────────────────────────────────────────────────────")
+	fmt.Fprintln(w, "  └────────────────────────────────────────────────────")
 }
 
 // --- Helpers ---

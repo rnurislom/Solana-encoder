@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	Endpoint string
-	Token    string
-	Username string
-	Password string
-	Wallets  []string
-	Insecure bool
+	Endpoint   string
+	Token      string
+	Username   string
+	Password   string
+	Wallets    []string
+	Insecure   bool
+	OutputFile string
 }
 
 type walletsFlag []string
@@ -33,6 +34,7 @@ func Parse() *Config {
 	flag.StringVar(&cfg.Username, "username", "", "Basic auth username")
 	flag.StringVar(&cfg.Password, "password", "", "Basic auth password")
 	flag.BoolVar(&cfg.Insecure, "insecure", false, "Use insecure (non-TLS) connection")
+	flag.StringVar(&cfg.OutputFile, "output", "", "Write updates to file instead of terminal")
 	flag.Var(&wallets, "wallet", "Wallet address to monitor (repeatable)")
 	flag.Parse()
 
