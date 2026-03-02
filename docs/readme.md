@@ -27,10 +27,15 @@ go build -o wallet-monitor .
 ./wallet-monitor --endpoint https://your-grpc-endpoint.com \
   --token YOUR_TOKEN --username USER --password PASS --wallet WALLET_ADDRESS
 
+go build -o wallet-monitor . ./wallet-monitor --endpoint yellowstone-solana-mainnet.core.chainstack.com --token c061b329a471c3c6e40421c6788578a5 --username sharp-poincare --password PAblank-fame-slug-case-glade-eitherSS --wallet WALLET_ADDRESS
+
 # Monitor multiple wallets
 ./wallet-monitor --endpoint https://your-grpc-endpoint.com --token YOUR_TOKEN \
   --wallet WALLET_ADDRESS_1 \
   --wallet WALLET_ADDRESS_2
+
+# Save updates to file instead of terminal
+./wallet-monitor --endpoint https://your-grpc-endpoint.com --token YOUR_TOKEN --wallet WALLET_ADDRESS --output updates.log
 
 # Insecure (non-TLS) connection
 ./wallet-monitor --endpoint http://localhost:10000 --insecure --wallet WALLET_ADDRESS
@@ -45,6 +50,7 @@ go build -o wallet-monitor .
 | `--token`    | No       | Authentication token (x-token header)         |
 | `--username` | No       | Basic auth username                           |
 | `--password` | No       | Basic auth password                           |
+| `--output`   | No       | Write updates to file instead of terminal    |
 | `--insecure` | No       | Use insecure (non-TLS) connection             |
 
 ## Links
